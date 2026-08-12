@@ -1394,22 +1394,23 @@ try{localStorage.setItem("bcp-auth-mode","firebase")}catch(e){}
 <link rel="stylesheet" href="./pwa-install.css">
 
 
-<!-- BCP iOS HOME FIX v1: safe-area + bloqueo del desplazamiento horizontal accidental -->
+<!-- BCP iOS HOME FIX v2: viewport estable + safe-area + footer sin salto al entrar -->
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<style id="bcp-ios-home-fix-v1">
-/* Se activa SOLO en iPhone/iPad desde el script de abajo. Android queda intacto. */
+<style id="bcp-ios-home-fix-v2">
+/* Se activa SOLO en iPhone/iPad. Android conserva exactamente su layout. */
 html.bcp-ios{
   -webkit-text-size-adjust:100%;
   text-size-adjust:100%;
 }
 
-/* Cuando Home está montado, no permitimos que el documento completo se desplace a los lados. */
+/* En Home el fondo inferior debe ser blanco incluso en el safe-area del iPhone. */
 html.bcp-ios.bcp-ios-home-active,
 html.bcp-ios.bcp-ios-home-active body{
   width:100%!important;
   max-width:100%!important;
   overflow-x:hidden!important;
-  overscroll-behavior-x:none;
+  overscroll-behavior-x:none!important;
+  background:#fff!important;
 }
 
 html.bcp-ios app-home{
@@ -1417,32 +1418,33 @@ html.bcp-ios app-home{
   width:100%!important;
   max-width:100%!important;
   overflow-x:hidden!important;
+  background:#fff!important;
 }
 
-/* El problema principal en iOS era overflow:auto: permitía mover TODO Home a izquierda/derecha. */
+/* 100svh es estable en iOS: evita que al primer scroll cambie la altura del Home. */
 html.bcp-ios app-home > .bienvenida-box{
   width:100%!important;
   max-width:100%!important;
   height:100vh!important;
-  height:100dvh!important;
+  height:100svh!important;
+  min-height:100svh!important;
   box-sizing:border-box!important;
   overflow-y:auto!important;
   overflow-x:hidden!important;
-  overscroll-behavior-x:none;
-  -webkit-overflow-scrolling:touch;
+  overscroll-behavior-x:none!important;
+  -webkit-overflow-scrolling:touch!important;
+  background:#fff!important;
 }
 
-/* Cabecera azul: conserva el azul debajo de la barra del iPhone, pero baja logo/íconos. */
+/* Cabecera azul separada de la isla dinámica/status bar. */
 html.bcp-ios app-home > .bienvenida-box > .flex.flex-column.align-items-center{
   width:100%!important;
   max-width:100%!important;
   box-sizing:border-box!important;
-  padding-top:10px!important;
   padding-top:max(env(safe-area-inset-top, 0px), 10px)!important;
 }
 
-/* En el HTML original este bloque usa width:90% + padding horizontal en vh.
-   En iPhone esa suma puede superar el ancho visual y crear scroll lateral. */
+/* El original usa width:90% + padding en vh; en iPhone podía superar el ancho real. */
 html.bcp-ios app-home > .bienvenida-box > .flex.flex-column.align-items-center > .flex.align-items-center.justify-content-between{
   width:90%!important;
   max-width:90%!important;
@@ -1451,7 +1453,6 @@ html.bcp-ios app-home > .bienvenida-box > .flex.flex-column.align-items-center >
   box-sizing:border-box!important;
 }
 
-/* Mantener todas las secciones principales dentro del ancho real del iPhone. */
 html.bcp-ios app-home .content,
 html.bcp-ios app-home .promos,
 html.bcp-ios app-home .homenovedades,
@@ -1459,18 +1460,14 @@ html.bcp-ios app-home .promScroll{
   max-width:100%!important;
   box-sizing:border-box!important;
 }
-
-html.bcp-ios app-home .homenovedades{
-  width:100%!important;
-}
-
+html.bcp-ios app-home .homenovedades{width:100%!important;}
 html.bcp-ios app-home .productos,
 html.bcp-ios app-home .cuenta{
   box-sizing:border-box!important;
   max-width:90%!important;
 }
 
-/* Los carruseles sí pueden deslizarse horizontalmente, pero dentro de su propio contenedor. */
+/* Solo los carruseles pueden desplazarse de lado. */
 html.bcp-ios app-home .homenovedades,
 html.bcp-ios app-home .promScroll{
   overflow-x:auto!important;
@@ -1478,21 +1475,52 @@ html.bcp-ios app-home .promScroll{
   -webkit-overflow-scrolling:touch!important;
 }
 
-/* Barra inferior fija, alineada al viewport y respetando el indicador Home de iPhone. */
+/*
+  iOS PWA a veces calcula mal position:fixed hasta el primer gesto.
+  Damos una altura explícita al footer y reservamos el safe-area desde el primer frame.
+*/
 html.bcp-ios app-home app-footer .footer{
+  position:fixed!important;
   left:0!important;
   right:0!important;
+  bottom:0!important;
   width:100%!important;
   max-width:100%!important;
-  box-sizing:border-box!important;
+  min-height:calc(6.5vh + env(safe-area-inset-bottom, 0px))!important;
   padding-bottom:env(safe-area-inset-bottom, 0px)!important;
+  box-sizing:border-box!important;
+  background:#fff!important;
+  z-index:1000!important;
+  -webkit-transform:translate3d(0,0,0)!important;
+  transform:translate3d(0,0,0)!important;
+  -webkit-backface-visibility:hidden!important;
+  backface-visibility:hidden!important;
+  will-change:transform!important;
+}
+html.bcp-ios app-home app-footer .footer > div{
+  min-height:6.5vh!important;
+  justify-content:flex-start!important;
+}
+html.bcp-ios app-home app-footer .footer img{
+  padding-top:.8vh!important;
+  flex:0 0 auto!important;
+}
+html.bcp-ios app-home app-footer .footer span{
+  display:block!important;
+  line-height:1.15!important;
+  margin:.35vh 0 .45vh!important;
+}
+
+/* Reserva contenido para que Promociones nunca quede debajo del footer. */
+html.bcp-ios app-home .promos{
+  padding-bottom:calc(13vh + env(safe-area-inset-bottom, 0px))!important;
 }
 </style>
-<script id="bcp-ios-home-fix-v1-script">
+<script id="bcp-ios-home-fix-v2-script">
 (function(){
   'use strict';
-  if(window.__BCP_IOS_HOME_FIX_V1__) return;
-  window.__BCP_IOS_HOME_FIX_V1__=true;
+  if(window.__BCP_IOS_HOME_FIX_V2__) return;
+  window.__BCP_IOS_HOME_FIX_V2__=true;
 
   var ua=navigator.userAgent||'';
   var isiOS=/iPad|iPhone|iPod/i.test(ua) ||
@@ -1502,16 +1530,43 @@ html.bcp-ios app-home app-footer .footer{
   var root=document.documentElement;
   root.classList.add('bcp-ios');
   var scheduled=false;
+  var lastHome=null;
+  var settleTimer=0;
 
   function resetHomeX(home){
     if(!home) return;
     var box=home.querySelector(':scope > .bienvenida-box');
     if(box && box.scrollLeft!==0) box.scrollLeft=0;
-    if(document.scrollingElement && document.scrollingElement.scrollLeft!==0){
-      document.scrollingElement.scrollLeft=0;
-    }
+    if(document.scrollingElement && document.scrollingElement.scrollLeft!==0) document.scrollingElement.scrollLeft=0;
     if(document.body && document.body.scrollLeft!==0) document.body.scrollLeft=0;
     if(document.documentElement.scrollLeft!==0) document.documentElement.scrollLeft=0;
+  }
+
+  /* Fuerza el mismo recalculo que iOS hacía recién después del primer scroll, sin mover la pantalla. */
+  function forceIOSLayout(home){
+    if(!home) return;
+    var box=home.querySelector(':scope > .bienvenida-box');
+    var footer=home.querySelector('app-footer .footer');
+    requestAnimationFrame(function(){
+      requestAnimationFrame(function(){
+        try{
+          void document.documentElement.offsetHeight;
+          if(footer){
+            footer.style.webkitTransform='translate3d(0,0,0)';
+            footer.style.transform='translate3d(0,0,0)';
+            void footer.offsetHeight;
+          }
+          if(box){
+            var oldTop=box.scrollTop;
+            if(oldTop===0 && box.scrollHeight>box.clientHeight+2){
+              box.scrollTop=1;
+              void box.offsetHeight;
+              box.scrollTop=0;
+            }
+          }
+        }catch(e){}
+      });
+    });
   }
 
   function sync(){
@@ -1519,8 +1574,30 @@ html.bcp-ios app-home app-footer .footer{
     var home=document.querySelector('app-home');
     var active=!!home;
     root.classList.toggle('bcp-ios-home-active',active);
-    if(document.body) document.body.classList.toggle('bcp-ios-home-active',active);
-    if(active) resetHomeX(home);
+    if(document.body){
+      document.body.classList.toggle('bcp-ios-home-active',active);
+      if(active) document.body.style.backgroundColor='#fff';
+      else document.body.style.backgroundColor='';
+    }
+    if(!active){ lastHome=null; return; }
+
+    resetHomeX(home);
+
+    if(home!==lastHome){
+      lastHome=home;
+      forceIOSLayout(home);
+      clearTimeout(settleTimer);
+      settleTimer=setTimeout(function(){
+        resetHomeX(home);
+        forceIOSLayout(home);
+      },220);
+      setTimeout(function(){
+        if(document.body.contains(home)){
+          resetHomeX(home);
+          forceIOSLayout(home);
+        }
+      },700);
+    }
   }
 
   function schedule(){
@@ -1529,19 +1606,23 @@ html.bcp-ios app-home app-footer .footer{
     requestAnimationFrame(sync);
   }
 
-  if(document.readyState==='loading'){
-    document.addEventListener('DOMContentLoaded',function(){
-      sync();
-      new MutationObserver(schedule).observe(document.body,{childList:true,subtree:true});
-    },{once:true});
-  }else{
+  function start(){
     sync();
-    if(document.body) new MutationObserver(schedule).observe(document.body,{childList:true,subtree:true});
+    if(document.body){
+      new MutationObserver(schedule).observe(document.body,{childList:true,subtree:true});
+    }
   }
 
-  window.addEventListener('pageshow',schedule,{passive:true});
+  if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',start,{once:true});
+  else start();
+
+  window.addEventListener('load',function(){setTimeout(schedule,50);setTimeout(schedule,300);},{once:true});
+  window.addEventListener('pageshow',function(){setTimeout(schedule,30);},{passive:true});
   window.addEventListener('resize',schedule,{passive:true});
-  window.addEventListener('orientationchange',function(){setTimeout(schedule,120);},{passive:true});
+  window.addEventListener('orientationchange',function(){setTimeout(schedule,150);},{passive:true});
+  if(window.visualViewport){
+    window.visualViewport.addEventListener('resize',schedule,{passive:true});
+  }
 })();
 </script>
 </head><body>
