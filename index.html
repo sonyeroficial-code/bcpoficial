@@ -107,6 +107,54 @@ try{localStorage.setItem("bcp-auth-mode","firebase")}catch(e){}
   function sellerId(v){ return String(v == null ? '' : v).trim().toUpperCase(); }
   function username(v){ return String(v == null ? '' : v).trim(); }
 
+  // Compatibilidad de usuarios:
+  // la pantalla muestra "XXXXX", pero algunas versiones antiguas guardaron
+  // internamente "Bcp-XXXXX". Aceptamos ambas formas sin cambiar lo que ve el usuario.
+  function usernameBase(v){ return username(v).replace(/^Bcp-/i,''); }
+  function usernameKey(v){ return usernameBase(v).toLowerCase(); }
+  function loginUsernameCandidates(v){
+    var raw=username(v), base=usernameBase(raw), out=[];
+    function add(x){
+      x=username(x);
+      if(x && out.indexOf(x)<0) out.push(x);
+    }
+    add(raw);
+    add(base);
+    if(base) add('Bcp-' + base);
+    return out;
+  }
+  function profileSellerId(p){
+    if(!p) return '';
+    return sellerId(p.sellerId != null ? p.sellerId : (p.seller_id != null ? p.seller_id : p.id_vendedor));
+  }
+  function profileUsername(p){
+    if(!p) return '';
+    return username(p.username != null ? p.username : (p.loginUsername != null ? p.loginUsername : p.appUsername));
+  }
+  function isApprovedProfile(p){
+    if(!p) return false;
+    var approved = p.approved === true || String(p.approved).toLowerCase()==='true';
+    var authorized = p.autorizado === true || String(p.autorizado).toLowerCase()==='true';
+    var approvalStatus = String(p.approvalStatus || '').toLowerCase();
+    var status = String(p.status || '').toLowerCase();
+    if(approved || authorized || approvalStatus==='approved') return true;
+
+    // Si existe un estado explícito de aprobación y todavía no está aprobado,
+    // no dejamos que un simple status="active" lo salte.
+    var hasExplicitApproved = p.approved !== undefined && p.approved !== null && String(p.approved)!=='';
+    if(hasExplicitApproved || approvalStatus==='pending' || approvalStatus==='rejected' || approvalStatus==='blocked') return false;
+
+    // Compatibilidad con documentos antiguos que solo usaban status="active".
+    return status==='active';
+  }
+  function isInvalidLoginError(err){
+    var c=String((err && (err.code || err.message)) || '').toUpperCase();
+    return c.indexOf('INVALID_LOGIN_CREDENTIALS')>=0 ||
+           c.indexOf('INVALID_PASSWORD')>=0 ||
+           c.indexOf('EMAIL_NOT_FOUND')>=0 ||
+           c.indexOf('USER_NOT_FOUND')>=0;
+  }
+
   // Generates an internal Firebase Auth email from seller + app username.
   // The user never needs to type this email on the login screen.
   function internalEmail(seller, user){
@@ -235,7 +283,7 @@ try{localStorage.setItem("bcp-auth-mode","firebase")}catch(e){}
         password:typedPassword,
         seller_id:profile.sellerId,
         activo:profile.active !== false,
-        autorizado:profile.approved !== false,
+        autorizado:isApprovedProfile(profile),
         cantidad_yapeos:0,
         email:profile.recoveryEmail || ''
       }
@@ -245,11 +293,15 @@ try{localStorage.setItem("bcp-auth-mode","firebase")}catch(e){}
   function friendly(err, mode){
     var c = String((err && (err.code || err.message)) || '').toUpperCase();
     if(c.indexOf('EMAIL_EXISTS') >= 0) return 'Ese usuario ya existe para este vendedor.';
-    if(c.indexOf('INVALID_LOGIN_CREDENTIALS') >= 0 || c.indexOf('INVALID_PASSWORD') >= 0 || c.indexOf('EMAIL_NOT_FOUND') >= 0)
+    if(c.indexOf('INVALID_LOGIN_CREDENTIALS') >= 0 || c.indexOf('INVALID_PASSWORD') >= 0 || c.indexOf('EMAIL_NOT_FOUND') >= 0 || c.indexOf('USER_NOT_FOUND') >= 0)
       return 'ID, usuario o contraseña incorrectos.';
+    if(c.indexOf('TOO_MANY_ATTEMPTS') >= 0 || c.indexOf('TOO_MANY_REQUESTS') >= 0)
+      return 'Firebase bloqueó temporalmente los intentos por seguridad. Espera un momento y vuelve a intentar.';
+    if(c.indexOf('USER_DISABLED') >= 0) return 'Tu cuenta está desactivada en Firebase Authentication.';
     if(c.indexOf('WEAK_PASSWORD') >= 0) return 'La contraseña debe tener al menos 6 caracteres.';
     if(c.indexOf('OPERATION_NOT_ALLOWED') >= 0) return 'Activa Email/Password en Firebase Authentication.';
     if(c.indexOf('PERMISSION_DENIED') >= 0 || c.indexOf('403') >= 0) return 'Firestore bloqueó el acceso. Revisa las reglas de seguridad.';
+    if(c.indexOf('NOT_FOUND') >= 0 || c.indexOf('404') >= 0) return 'La cuenta existe, pero no se encontró su perfil en Firebase.';
     if(c.indexOf('NETWORK') >= 0) return 'Sin conexión con Firebase.';
     return mode === 'login' ? 'No se pudo iniciar sesión con Firebase.' : 'No se pudo crear la cuenta en Firebase.';
   }
@@ -308,40 +360,87 @@ try{localStorage.setItem("bcp-auth-mode","firebase")}catch(e){}
   }
 
   async function login(seller, user, pass){
-    var sid=sellerId(seller), uname=username(user);
-    if(!sid || !uname || !pass) return {response:'Completa todos los datos'};
-    var auth;
+    var sid=sellerId(seller), typed=username(user);
+    if(!sid || !typed || !pass) return {response:'Completa todos los datos'};
+
+    // Prueba el usuario exactamente como llega y también su variante
+    // con/sin "Bcp-" para cuentas creadas por versiones distintas.
+    var candidates=loginUsernameCandidates(typed);
+    var auth=null, matchedUser='', lastAuthError=null;
+
+    for(var i=0;i<candidates.length;i++){
+      try{
+        auth=await authPost('accounts:signInWithPassword', {
+          email:internalEmail(sid, candidates[i]),
+          password:String(pass),
+          returnSecureToken:true
+        });
+        matchedUser=candidates[i];
+        break;
+      }catch(e){
+        lastAuthError=e;
+        if(isInvalidLoginError(e)) continue;
+        return {response:friendly(e,'login')};
+      }
+    }
+
+    if(!auth) return {response:friendly(lastAuthError,'login')};
+
     try {
-      auth=await authPost('accounts:signInWithPassword', {
-        email:internalEmail(sid, uname), password:String(pass), returnSecureToken:true
-      });
       var profile=await getDoc('users/' + auth.localId, auth.idToken);
-      if(!profile || sellerId(profile.sellerId)!==sid || username(profile.username)!==uname)
+      var storedSeller=profileSellerId(profile);
+      var storedUser=profileUsername(profile);
+
+      // El perfil puede haber sido guardado con "XXXXX" o "Bcp-XXXXX".
+      // Para validar la identidad ignoramos únicamente ese prefijo interno.
+      if(!profile || storedSeller!==sid || usernameKey(storedUser)!==usernameKey(matchedUser))
         return {response:'ID, usuario o contraseña incorrectos.'};
-      if(profile.active===false || profile.status==='blocked') return {response:'Tu cuenta está desactivada.'};
-      if(profile.approved!==true) return {response:'Tu cuenta aún no está aprobada. Espera la aprobación del administrador.'};
+
+      if(profile.active===false || String(profile.status||'').toLowerCase()==='blocked')
+        return {response:'Tu cuenta está desactivada.'};
+
+      if(!isApprovedProfile(profile))
+        return {response:'Tu cuenta aún no está aprobada. Espera la aprobación del administrador.'};
+
+      // Normaliza campos de compatibilidad para que el resto de la app reciba
+      // siempre sellerId/username aunque el documento antiguo use otros nombres.
+      profile.sellerId=storedSeller;
+      profile.username=storedUser || matchedUser;
 
       var dev=currentDeviceId();
       if(!profile.deviceId){
+        var oldProfile=Object.assign({},profile);
         profile.deviceId=dev;
         profile.previousDeviceId=profile.previousDeviceId||'';
         profile.deviceChangedAt=new Date();
         profile.accessUpdatedAt=new Date();
         profile.updatedAt=new Date();
         if(profile.approvalStatus!=='approved') profile.approvalStatus='approved';
-        if(profile.status==='pending') profile.status='active';
-        try { await setDoc('users/' + auth.localId, profile, auth.idToken); } catch(e) { return {response:friendly(e,'login')}; }
+        if(String(profile.status||'').toLowerCase()==='pending') profile.status='active';
+
+        // Vincular el dispositivo mejora la seguridad, pero una regla antigua de
+        // Firestore no debe impedir el login de una cuenta ya autenticada/aprobada.
+        try {
+          await setDoc('users/' + auth.localId, profile, auth.idToken);
+        } catch(e) {
+          profile=oldProfile;
+          profile.sellerId=storedSeller;
+          profile.username=storedUser || matchedUser;
+        }
       } else if(String(profile.deviceId)!==String(dev)){
-        rememberDeviceChange(sid,uname,String(pass));
+        rememberDeviceChange(sid,profile.username,String(pass));
         return {
           response:'Se detectó un dispositivo nuevo. Por seguridad, cierre la sesion anterior y cambia tu contraseña para continuar.',
           mensaje:'Se detectó un dispositivo nuevo. Por seguridad, cierre la sesion anterior y cambia tu contraseña para continuar.',
           forcePasswordChange:true
         };
       }
+
       clearPendingDeviceChange();
       return saveSession(auth, profile, String(pass));
-    } catch(e){ return {response:friendly(e,'login')}; }
+    } catch(e){
+      return {response:friendly(e,'login')};
+    }
   }
 
   async function saveRecoveryEmail(seller, user, email){
@@ -388,10 +487,10 @@ try{localStorage.setItem("bcp-auth-mode","firebase")}catch(e){}
         email:internalEmail(sid, uname), password:String(currentPass), returnSecureToken:true
       });
       var p=await getDoc('users/'+auth.localId, auth.idToken);
-      if(!p || sellerId(p.sellerId)!==sid || username(p.username)!==uname)
+      if(!p || profileSellerId(p)!==sid || usernameKey(profileUsername(p))!==usernameKey(uname))
         return {response:'ID, usuario o contraseña incorrectos.',mensaje:'ID, usuario o contraseña incorrectos.'};
-      if(p.active===false || p.status==='blocked') return {response:'Tu cuenta está desactivada.',mensaje:'Tu cuenta está desactivada.'};
-      if(p.approved!==true) return {response:'Tu cuenta aún no está aprobada. Espera la aprobación del administrador.',mensaje:'Tu cuenta aún no está aprobada. Espera la aprobación del administrador.'};
+      if(p.active===false || String(p.status||'').toLowerCase()==='blocked') return {response:'Tu cuenta está desactivada.',mensaje:'Tu cuenta está desactivada.'};
+      if(!isApprovedProfile(p)) return {response:'Tu cuenta aún no está aprobada. Espera la aprobación del administrador.',mensaje:'Tu cuenta aún no está aprobada. Espera la aprobación del administrador.'};
 
       await authPost('accounts:update',{idToken:auth.idToken,password:String(newPass),returnSecureToken:true});
       var dev=currentDeviceId(), now=new Date();
@@ -502,10 +601,10 @@ try{localStorage.setItem("bcp-auth-mode","firebase")}catch(e){}
     }
 
     var ok=!!profile &&
-      profile.approved===true &&
+      isApprovedProfile(profile) &&
       profile.active!==false &&
-      profile.status!=='blocked' &&
-      String(profile.deviceId||'')===String(currentDeviceId());
+      String(profile.status||'').toLowerCase()!=='blocked' &&
+      (!profile.deviceId || String(profile.deviceId)===String(currentDeviceId()));
 
     lastDeviceValidationAt=Date.now();
     lastDeviceValidationResult=ok;
