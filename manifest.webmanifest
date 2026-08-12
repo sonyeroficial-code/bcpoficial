@@ -1,8 +1,8 @@
 {
   "id": "./",
-  "name": "Proyecto Demo",
-  "short_name": "Proyecto",
-  "description": "Aplicación web instalable compatible con Android, iPhone y escritorio.",
+  "name": "BCP",
+  "short_name": "BCP",
+  "description": "BCP",
   "lang": "es-PE",
   "start_url": "./index.html",
   "scope": "./",
