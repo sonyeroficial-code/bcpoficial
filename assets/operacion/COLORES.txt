@@ -1,0 +1,6 @@
+Actualización de colores SVG
+
+Operaciones: #002A8C
+Para ti (productos): #4477ED
+
+Reemplaza los SVG anteriores conservando el mismo nombre.
