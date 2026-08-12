@@ -2182,6 +2182,49 @@ app-monto:has(app-preload) .moneda-toggle{
 })();
 </script>
 
+<!-- BCP FIX FINAL: preload iPhone sin línea superior azul/blanca -->
+<style id="bcp-preload-safearea-color-fix">
+/* Forzamos que los flashes cubran también la safe area superior sin dejar una línea del color opuesto. */
+app-preloadw .pantalla-gris-login,
+app-preload .pantalla-azul-login,
+app-monto app-preloadw .pantalla-gris-login,
+app-monto app-preload .pantalla-azul-login{
+  position:fixed!important;
+  left:0!important;
+  right:0!important;
+  top:calc(env(safe-area-inset-top,0px) * -1)!important;
+  bottom:0!important;
+  width:100vw!important;
+  height:calc(100dvh + env(safe-area-inset-top,0px) + 2px)!important;
+  min-height:calc(100vh + env(safe-area-inset-top,0px) + 2px)!important;
+  margin:0!important;
+  border:0!important;
+  box-shadow:none!important;
+  overflow:hidden!important;
+  background-clip:padding-box!important;
+}
+app-preloadw .pantalla-gris-login,
+app-monto app-preloadw .pantalla-gris-login{
+  background:#fff!important;
+}
+app-preload .pantalla-azul-login,
+app-monto app-preload .pantalla-azul-login{
+  background:#002A8D!important;
+}
+app-preloadw .pantalla-gris-login::before,
+app-preload .pantalla-azul-login::before,
+app-monto app-preloadw .pantalla-gris-login::before,
+app-monto app-preload .pantalla-azul-login::before{
+  content:""!important;
+  position:absolute!important;
+  left:0!important;
+  right:0!important;
+  top:0!important;
+  height:calc(env(safe-area-inset-top,0px) + 26px)!important;
+  background:inherit!important;
+  pointer-events:none!important;
+}
+</style>
 
 
 <!-- BCP FIX: QR sin parpadeo entre scanner y monto + sonido bancario -->
