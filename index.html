@@ -1392,6 +1392,158 @@ try{localStorage.setItem("bcp-auth-mode","firebase")}catch(e){}
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="format-detection" content="telephone=no">
 <link rel="stylesheet" href="./pwa-install.css">
+
+
+<!-- BCP iOS HOME FIX v1: safe-area + bloqueo del desplazamiento horizontal accidental -->
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<style id="bcp-ios-home-fix-v1">
+/* Se activa SOLO en iPhone/iPad desde el script de abajo. Android queda intacto. */
+html.bcp-ios{
+  -webkit-text-size-adjust:100%;
+  text-size-adjust:100%;
+}
+
+/* Cuando Home está montado, no permitimos que el documento completo se desplace a los lados. */
+html.bcp-ios.bcp-ios-home-active,
+html.bcp-ios.bcp-ios-home-active body{
+  width:100%!important;
+  max-width:100%!important;
+  overflow-x:hidden!important;
+  overscroll-behavior-x:none;
+}
+
+html.bcp-ios app-home{
+  display:block!important;
+  width:100%!important;
+  max-width:100%!important;
+  overflow-x:hidden!important;
+}
+
+/* El problema principal en iOS era overflow:auto: permitía mover TODO Home a izquierda/derecha. */
+html.bcp-ios app-home > .bienvenida-box{
+  width:100%!important;
+  max-width:100%!important;
+  height:100vh!important;
+  height:100dvh!important;
+  box-sizing:border-box!important;
+  overflow-y:auto!important;
+  overflow-x:hidden!important;
+  overscroll-behavior-x:none;
+  -webkit-overflow-scrolling:touch;
+}
+
+/* Cabecera azul: conserva el azul debajo de la barra del iPhone, pero baja logo/íconos. */
+html.bcp-ios app-home > .bienvenida-box > .flex.flex-column.align-items-center{
+  width:100%!important;
+  max-width:100%!important;
+  box-sizing:border-box!important;
+  padding-top:10px!important;
+  padding-top:max(env(safe-area-inset-top, 0px), 10px)!important;
+}
+
+/* En el HTML original este bloque usa width:90% + padding horizontal en vh.
+   En iPhone esa suma puede superar el ancho visual y crear scroll lateral. */
+html.bcp-ios app-home > .bienvenida-box > .flex.flex-column.align-items-center > .flex.align-items-center.justify-content-between{
+  width:90%!important;
+  max-width:90%!important;
+  padding-left:3vw!important;
+  padding-right:3vw!important;
+  box-sizing:border-box!important;
+}
+
+/* Mantener todas las secciones principales dentro del ancho real del iPhone. */
+html.bcp-ios app-home .content,
+html.bcp-ios app-home .promos,
+html.bcp-ios app-home .homenovedades,
+html.bcp-ios app-home .promScroll{
+  max-width:100%!important;
+  box-sizing:border-box!important;
+}
+
+html.bcp-ios app-home .homenovedades{
+  width:100%!important;
+}
+
+html.bcp-ios app-home .productos,
+html.bcp-ios app-home .cuenta{
+  box-sizing:border-box!important;
+  max-width:90%!important;
+}
+
+/* Los carruseles sí pueden deslizarse horizontalmente, pero dentro de su propio contenedor. */
+html.bcp-ios app-home .homenovedades,
+html.bcp-ios app-home .promScroll{
+  overflow-x:auto!important;
+  overflow-y:hidden!important;
+  -webkit-overflow-scrolling:touch!important;
+}
+
+/* Barra inferior fija, alineada al viewport y respetando el indicador Home de iPhone. */
+html.bcp-ios app-home app-footer .footer{
+  left:0!important;
+  right:0!important;
+  width:100%!important;
+  max-width:100%!important;
+  box-sizing:border-box!important;
+  padding-bottom:env(safe-area-inset-bottom, 0px)!important;
+}
+</style>
+<script id="bcp-ios-home-fix-v1-script">
+(function(){
+  'use strict';
+  if(window.__BCP_IOS_HOME_FIX_V1__) return;
+  window.__BCP_IOS_HOME_FIX_V1__=true;
+
+  var ua=navigator.userAgent||'';
+  var isiOS=/iPad|iPhone|iPod/i.test(ua) ||
+    (navigator.platform==='MacIntel' && navigator.maxTouchPoints>1);
+  if(!isiOS) return;
+
+  var root=document.documentElement;
+  root.classList.add('bcp-ios');
+  var scheduled=false;
+
+  function resetHomeX(home){
+    if(!home) return;
+    var box=home.querySelector(':scope > .bienvenida-box');
+    if(box && box.scrollLeft!==0) box.scrollLeft=0;
+    if(document.scrollingElement && document.scrollingElement.scrollLeft!==0){
+      document.scrollingElement.scrollLeft=0;
+    }
+    if(document.body && document.body.scrollLeft!==0) document.body.scrollLeft=0;
+    if(document.documentElement.scrollLeft!==0) document.documentElement.scrollLeft=0;
+  }
+
+  function sync(){
+    scheduled=false;
+    var home=document.querySelector('app-home');
+    var active=!!home;
+    root.classList.toggle('bcp-ios-home-active',active);
+    if(document.body) document.body.classList.toggle('bcp-ios-home-active',active);
+    if(active) resetHomeX(home);
+  }
+
+  function schedule(){
+    if(scheduled) return;
+    scheduled=true;
+    requestAnimationFrame(sync);
+  }
+
+  if(document.readyState==='loading'){
+    document.addEventListener('DOMContentLoaded',function(){
+      sync();
+      new MutationObserver(schedule).observe(document.body,{childList:true,subtree:true});
+    },{once:true});
+  }else{
+    sync();
+    if(document.body) new MutationObserver(schedule).observe(document.body,{childList:true,subtree:true});
+  }
+
+  window.addEventListener('pageshow',schedule,{passive:true});
+  window.addEventListener('resize',schedule,{passive:true});
+  window.addEventListener('orientationchange',function(){setTimeout(schedule,120);},{passive:true});
+})();
+</script>
 </head><body>
 <app-root></app-root>
 
