@@ -25,7 +25,7 @@
       <button id="pwa-install-close" aria-label="Cerrar">×</button>
       <div id="pwa-install-header">
         <div id="pwa-install-brand">
-          <img id="pwa-install-icon" src="./assets/icons/icon-192x192.png" alt="Icono de la aplicación">
+          <img id="pwa-install-icon" src="/bcp-install-192-v8.png" alt="Icono de la aplicación">
           <div>
             <span id="pwa-install-badge">Instalación recomendada</span>
             <h2 id="pwa-install-title">Instala la aplicación</h2>
