@@ -3949,6 +3949,52 @@ html.bcp-iphone-voucher-ui app-transf-editado .bienvenida-box > div:first-child 
     });
   }
 
+  function formatMaskedAccount(rawDigits){
+    var digits = (rawDigits || '').replace(/\D/g,'');
+    if(!digits) return rawDigits;
+    var last4 = digits.slice(-4);
+    return '**** ' + last4;
+  }
+
+  function maskVoucherAccount(){
+    var roots = document.querySelectorAll('app-constancia, app-transf-editado');
+
+    roots.forEach(function(root){
+      var spans = root.querySelectorAll('span');
+
+      spans.forEach(function(label){
+        if((label.textContent || '').trim() !== 'Desde') return;
+
+        /* La fila de cuenta origen. */
+        var row = label.parentElement;
+        if(!row) return;
+
+        var walker = document.createTreeWalker(
+          row,
+          NodeFilter.SHOW_TEXT,
+          null
+        );
+
+        var node;
+        while((node = walker.nextNode())){
+          var original = node.nodeValue || '';
+          var raw = original.trim();
+          if(!raw) continue;
+
+          /* Si ya está como **** 6089, no vuelve a tocarlo. */
+          if(/^\*{4}\s*\d{4}$/.test(raw)) continue;
+
+          var digits = raw.replace(/\D/g,'');
+
+          /* Solo toca el subtexto numérico de la cuenta dentro de la fila Desde. */
+          if(/^\d{4,}$/.test(digits) && /^\s*[\*\d\s-]+\s*$/.test(original)){
+            node.nodeValue = original.replace(raw, formatMaskedAccount(digits));
+          }
+        }
+      });
+    });
+  }
+
   var queued = false;
   function queueMask(){
     if(queued) return;
@@ -3956,6 +4002,7 @@ html.bcp-iphone-voucher-ui app-transf-editado .bienvenida-box > div:first-child 
     requestAnimationFrame(function(){
       queued = false;
       maskVoucherPhone();
+      maskVoucherAccount();
     });
   }
 
