@@ -3881,5 +3881,100 @@ html.bcp-iphone-voucher-ui app-transf-editado .bienvenida-box > div:first-child 
 }
 </style>
 
+
+<!-- BCP: en constancias, ocultar parcialmente SOLO el número de celular -->
+<script id="bcp-voucher-phone-mask-script">
+(function(){
+  'use strict';
+
+  function getNumeroParam(){
+    var sources = [location.search || ''];
+
+    /* Respaldo por si alguna ruta usa query params dentro del hash. */
+    var hash = location.hash || '';
+    var qi = hash.indexOf('?');
+    if(qi >= 0) sources.push(hash.slice(qi));
+
+    for(var i=0;i<sources.length;i++){
+      try{
+        var p = new URLSearchParams(sources[i]);
+        var v = (p.get('numero') || '').replace(/\D/g,'');
+        if(v.length === 9) return v;
+      }catch(e){}
+    }
+    return '';
+  }
+
+  function maskPhone(phone){
+    if(!/^\d{9}$/.test(phone)) return phone;
+    var last4 = phone.slice(-4);
+    return '*** **' + last4.charAt(0) + ' ' + last4.slice(1);
+  }
+
+  function maskVoucherPhone(){
+    var phone = getNumeroParam();
+    if(!phone) return;
+
+    var masked = maskPhone(phone);
+    var roots = document.querySelectorAll('app-constancia, app-transf-editado');
+
+    roots.forEach(function(root){
+      var spans = root.querySelectorAll('span');
+
+      spans.forEach(function(label){
+        if((label.textContent || '').trim() !== 'Enviado a') return;
+
+        /* La fila completa donde Angular imprime nombre / número / destino. */
+        var row = label.parentElement;
+        if(!row) return;
+
+        var walker = document.createTreeWalker(
+          row,
+          NodeFilter.SHOW_TEXT,
+          null
+        );
+
+        var node;
+        while((node = walker.nextNode())){
+          var raw = (node.nodeValue || '').trim();
+          var digits = raw.replace(/\D/g,'');
+
+          /* Solo reemplaza el mismo `numero` recibido por la ruta.
+             No toca cuentas, operación, monto ni otros números. */
+          if(digits === phone && /^\s*[\d\s-]+\s*$/.test(node.nodeValue || '')){
+            node.nodeValue = (node.nodeValue || '').replace(raw, masked);
+          }
+        }
+      });
+    });
+  }
+
+  var queued = false;
+  function queueMask(){
+    if(queued) return;
+    queued = true;
+    requestAnimationFrame(function(){
+      queued = false;
+      maskVoucherPhone();
+    });
+  }
+
+  document.addEventListener('DOMContentLoaded', queueMask, {once:true});
+
+  try{
+    new MutationObserver(queueMask).observe(
+      document.documentElement,
+      {subtree:true, childList:true, characterData:true}
+    );
+  }catch(e){}
+
+  window.addEventListener('popstate', queueMask);
+  window.addEventListener('hashchange', queueMask);
+
+  /* Primera pasada, por si el componente ya existe. */
+  queueMask();
+})();
+</script>
+
 <script src="./pwa-install.js"></script>
 </body></html>
