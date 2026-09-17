@@ -3,7 +3,7 @@
 <meta charset="utf-8">
 <title>BCP</title>
 <base href="./">
-<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover,interactive-widget=resizes-content">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover,interactive-widget=overlays-content">
 <meta name="theme-color" content="#002A8D">
 <meta name="application-name" content="BCP">
 <meta name="apple-mobile-web-app-title" content="BCP">
@@ -1555,6 +1555,203 @@ app-micuenta #bcp-iphone-voucher-row .section-icon{
 <meta name="format-detection" content="telephone=no">
 <link rel="stylesheet" href="./pwa-install.css">
 </head><body>
+
+<style id="bcp-keyboard-layout-fix-v18">
+/*
+  Mantiene el tamaño REAL de la app cuando aparece el teclado.
+  El teclado puede tapar parte inferior, pero ya no encoge toda la interfaz.
+  Si el campo enfocado queda tapado, se desplaza la app hacia arriba sin escalarla.
+*/
+html,body{
+  width:100%!important;
+  overflow:hidden!important;
+}
+body{
+  height:var(--bcp-locked-height,100dvh)!important;
+  min-height:var(--bcp-locked-height,100dvh)!important;
+}
+app-root{
+  width:100%!important;
+  height:var(--bcp-locked-height,100dvh)!important;
+  min-height:var(--bcp-locked-height,100dvh)!important;
+  overflow:hidden!important;
+  transform:translate3d(0,var(--bcp-keyboard-pan,0px),0);
+  transition:transform .16s ease-out;
+  will-change:transform;
+}
+body.bcp-keyboard-open app-root{
+  height:var(--bcp-locked-height,100dvh)!important;
+  min-height:var(--bcp-locked-height,100dvh)!important;
+}
+/* Evita que componentes basados en 100vh se recalculen brutalmente al abrir teclado. */
+body.bcp-keyboard-open .auth-screen,
+body.bcp-keyboard-open .bienvenida-box,
+body.bcp-keyboard-open .reg-screen,
+body.bcp-keyboard-open .config-screen{
+  min-height:var(--bcp-locked-height,100dvh)!important;
+}
+</style>
+
+<script id="bcp-keyboard-layout-fix-v18-script">
+(function(){
+  'use strict';
+  if(window.__BCP_KEYBOARD_LAYOUT_FIX_V18__) return;
+  window.__BCP_KEYBOARD_LAYOUT_FIX_V18__=true;
+
+  var root=document.documentElement;
+  var body=null;
+  var lockedHeight=0;
+  var keyboardOpen=false;
+  var raf=0;
+
+  function vh(){
+    return Math.max(window.innerHeight||0, document.documentElement.clientHeight||0);
+  }
+
+  function isEditable(el){
+    return !!(el && (
+      el.tagName==='INPUT' ||
+      el.tagName==='TEXTAREA' ||
+      el.tagName==='SELECT' ||
+      el.isContentEditable
+    ));
+  }
+
+  function setLockedHeight(h){
+    if(!h || h<300) return;
+    lockedHeight=Math.round(h);
+    root.style.setProperty('--bcp-locked-height',lockedHeight+'px');
+  }
+
+  function initHeight(){
+    var h=vh();
+    if(!lockedHeight || h>lockedHeight*0.88) setLockedHeight(h);
+  }
+
+  function visualInfo(){
+    var vv=window.visualViewport;
+    var currentLayout=vh();
+    var visible=vv ? vv.height : currentLayout;
+    var offsetTop=vv ? vv.offsetTop : 0;
+
+    /* lockedHeight is the full app height before the keyboard. */
+    var base=Math.max(lockedHeight||0,currentLayout);
+    var hidden=Math.max(0,base-(visible+offsetTop));
+    var focused=isEditable(document.activeElement);
+    var open=focused && hidden>Math.max(120,base*.16);
+
+    return {
+      vv:vv,
+      base:base,
+      visible:visible,
+      offsetTop:offsetTop,
+      hidden:hidden,
+      focused:focused,
+      open:open,
+      visibleBottom:offsetTop+visible
+    };
+  }
+
+  function computePan(info){
+    var el=document.activeElement;
+    if(!info.open || !isEditable(el)) return 0;
+
+    var r=el.getBoundingClientRect();
+
+    /*
+      Deja el input unos 22px arriba del teclado.
+      Solo traslada hacia arriba; nunca reduce/escala la pantalla.
+    */
+    var safeBottom=info.visibleBottom-22;
+    var safeTop=info.offsetTop+18;
+    var pan=0;
+
+    if(r.bottom>safeBottom){
+      pan=-(r.bottom-safeBottom);
+    }else if(r.top<safeTop){
+      pan=(safeTop-r.top);
+    }
+
+    /* No empujar demasiado la interfaz. */
+    var maxUp=Math.max(0,info.hidden-30);
+    if(pan<0) pan=Math.max(pan,-maxUp);
+    if(pan>0) pan=Math.min(pan,60);
+
+    return Math.round(pan);
+  }
+
+  function apply(){
+    raf=0;
+    if(!body) body=document.body;
+    if(!body) return;
+
+    var info=visualInfo();
+
+    if(info.open){
+      keyboardOpen=true;
+      body.classList.add('bcp-keyboard-open');
+      root.style.setProperty('--bcp-keyboard-pan',computePan(info)+'px');
+    }else{
+      if(keyboardOpen){
+        body.classList.remove('bcp-keyboard-open');
+        root.style.setProperty('--bcp-keyboard-pan','0px');
+      }
+      keyboardOpen=false;
+
+      /*
+        Actualizamos altura solo cuando NO hay teclado.
+        Así rotación/barra del navegador siguen funcionando,
+        pero el teclado no encoge la app.
+      */
+      var current=vh();
+      if(current>0 && (!lockedHeight || Math.abs(current-lockedHeight)>120)){
+        setLockedHeight(current);
+      }
+    }
+  }
+
+  function schedule(){
+    if(raf) cancelAnimationFrame(raf);
+    raf=requestAnimationFrame(apply);
+  }
+
+  function boot(){
+    body=document.body;
+    setLockedHeight(vh());
+
+    window.addEventListener('resize',schedule,{passive:true});
+    window.addEventListener('orientationchange',function(){
+      setTimeout(function(){
+        keyboardOpen=false;
+        setLockedHeight(vh());
+        schedule();
+      },250);
+    },{passive:true});
+
+    document.addEventListener('focusin',function(ev){
+      if(isEditable(ev.target)) setTimeout(schedule,80);
+    },true);
+
+    document.addEventListener('focusout',function(){
+      setTimeout(schedule,180);
+    },true);
+
+    if(window.visualViewport){
+      window.visualViewport.addEventListener('resize',schedule,{passive:true});
+      window.visualViewport.addEventListener('scroll',schedule,{passive:true});
+    }
+
+    schedule();
+  }
+
+  if(document.readyState==='loading'){
+    document.addEventListener('DOMContentLoaded',boot,{once:true});
+  }else{
+    boot();
+  }
+})();
+</script>
+
 <style id="bcp-demo-24h-style">
 #bcp-demo-entry-btn{width:100%;margin-top:3.2vw;padding:3.8vw 4vw;border:1.5px solid #002a8d;border-radius:999px;background:linear-gradient(180deg,#ffffff 0%,#f4f7ff 100%);color:#002a8d;font:800 3.45vw/1.1 system-ui,-apple-system,"Segoe UI",sans-serif;box-shadow:0 8px 18px rgba(0,42,141,.12);cursor:pointer;letter-spacing:.02em}
 #bcp-demo-entry-btn::before{content:"◆ ";font-weight:900}
@@ -1572,6 +1769,9 @@ app-micuenta #bcp-iphone-voucher-row .section-icon{
 #bcp-demo-buyfab:active{transform:scale(.96)}
 #bcp-demo-buyfab.is-pressed{animation:bcpDemoFabPress .28s ease-out}
 #bcp-demo-buyfab-label{position:fixed;right:21.5vw;bottom:calc(env(safe-area-inset-bottom,0px) + 10.35vh);z-index:2147482599;background:rgba(255,255,255,.96);border:.15vw solid rgba(0,42,141,.12);color:#0f172a;border-radius:5vh;padding:1.05vh 3.1vw;box-shadow:0 1.2vh 3vh rgba(0,0,0,.14);font:700 3vw/1 system-ui,-apple-system,"Segoe UI",sans-serif;pointer-events:none;white-space:nowrap;box-sizing:border-box}
+body.bcp-demo-kb-open #bcp-demo-topbar{transform:none!important}
+body.bcp-demo-kb-open #bcp-demo-buyfab{box-shadow:0 1.5vh 3.8vh rgba(253,121,0,.34),0 0 0 0 rgba(253,121,0,.34)}
+body.bcp-demo-kb-open #bcp-demo-buyfab-label{box-shadow:0 1.2vh 3vh rgba(0,0,0,.14)}
 #bcp-demo-mini-badge{position:fixed;left:3vw;bottom:calc(env(safe-area-inset-bottom,0px) + 2.2vh);z-index:2147482550;padding:.55vh 2.2vw;border-radius:3.5vh;background:rgba(255,255,255,.82);border:.12vh solid rgba(0,42,141,.10);color:rgba(0,42,141,.72);font:800 1.08vh/1 system-ui,-apple-system,"Segoe UI",sans-serif;letter-spacing:.14em;text-transform:uppercase;pointer-events:none;user-select:none;-webkit-user-select:none;box-shadow:0 .4vh 1.2vh rgba(0,0,0,.08);backdrop-filter:blur(6px);opacity:.9;box-sizing:border-box}
 #bcp-demo-purchase-modal{position:fixed;top:0;left:0;width:100vw;height:100vh;z-index:2147483600;background:rgba(3,13,37,.58);display:flex;align-items:center;justify-content:center;backdrop-filter:blur(5px);box-sizing:border-box}
 .bcp-demo-modal-card{width:76%;background:#fff;border-radius:3vw;padding:2vh 4vw 1.7vh;box-sizing:border-box;text-align:center;box-shadow:0 1.8vh 5.5vh rgba(0,0,0,.27);font-family:system-ui,-apple-system,"Segoe UI",sans-serif}.bcp-demo-modal-icon{width:5.5vh;height:5.5vh;margin:0 auto 1vh;border-radius:2vw;display:flex;align-items:center;justify-content:center;background:linear-gradient(180deg,#fff3e8 0%,#ffe2bd 100%);color:#fd7900;font-size:2.7vh;font-weight:900}.bcp-demo-modal-card h3{margin:.4vh 0;color:#002a8d;font-size:2.2vh;font-weight:800}.bcp-demo-modal-card p{margin:0 1vw 1.5vh;color:#64748b;font-size:1.5vh;line-height:2.1vh}.bcp-demo-contact-list{display:grid;grid-template-columns:1fr 1fr;gap:2vw;margin:0 0 1.4vh}.bcp-demo-contact-item{border:0;border-radius:2.5vw;padding:1.2vh 1.5vw;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:.7vh;font:800 1.5vh/1 system-ui,-apple-system,"Segoe UI",sans-serif;cursor:pointer;box-shadow:0 .5vh 1.4vh rgba(0,0,0,.08);box-sizing:border-box}.bcp-demo-contact-item:active{transform:scale(.97)}.bcp-demo-contact-mark{width:4vh;height:4vh;border-radius:50%;display:flex;align-items:center;justify-content:center;color:#fff;font-weight:900;font-size:1.7vh}.bcp-demo-whatsapp{background:#f2fff6;color:#15803d;border:.1vh solid rgba(22,163,74,.12)}.bcp-demo-whatsapp .bcp-demo-contact-mark{background:#16a34a}.bcp-demo-telegram{background:#f2f8ff;color:#0369a1;border:.1vh solid rgba(2,132,199,.12)}.bcp-demo-telegram .bcp-demo-contact-mark{background:#0284c7}.bcp-demo-modal-card button{width:100%;border:0;border-radius:5vh;padding:1.25vh 2vw;font-weight:800;font-size:1.4vh;letter-spacing:.02em}.bcp-demo-modal-secondary{background:#eef2fb;color:#002a8d}
@@ -1618,6 +1818,28 @@ app-micuenta #bcp-iphone-voucher-row .section-icon{
   function viewportHeight(){ return Math.max(document.documentElement.clientHeight || 0, window.innerHeight || 0); }
   function topSafePx(){ return Math.max(6, viewportHeight() * 0.01); }
 
+  var DEMO_VIEWPORT_BASE_H = viewportHeight();
+
+  function keyboardState(){
+    var vv = window.visualViewport || null;
+    var layoutH = Math.max(DEMO_VIEWPORT_BASE_H || 0, viewportHeight());
+    var visibleH = vv ? Math.max(0, vv.height || 0) : viewportHeight();
+    var offsetTop = vv ? Math.max(0, vv.offsetTop || 0) : 0;
+    var active = document.activeElement;
+    var isTextFocus = !!(active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA' || active.isContentEditable));
+    var hidden = Math.max(0, layoutH - (visibleH + offsetTop));
+    var open = isTextFocus && hidden > Math.max(120, layoutH * 0.18);
+    if(!open && viewportHeight() > DEMO_VIEWPORT_BASE_H * 0.94) DEMO_VIEWPORT_BASE_H = Math.max(DEMO_VIEWPORT_BASE_H, viewportHeight());
+    return {open:open, layoutH:layoutH, visibleH:visibleH, offsetTop:offsetTop, hidden:hidden, safeBottom:offsetTop + visibleH};
+  }
+
+  function applyKeyboardMode(){
+    if(!document.body) return;
+    var ks = keyboardState();
+    if(ks.open) document.body.classList.add('bcp-demo-kb-open');
+    else document.body.classList.remove('bcp-demo-kb-open');
+  }
+
   function getSavedTopbarPos(){
     var x = Number(lsGet(TOPBAR_POS_X) || 'NaN');
     var y = Number(lsGet(TOPBAR_POS_Y) || 'NaN');
@@ -1650,15 +1872,23 @@ app-micuenta #bcp-iphone-voucher-row .section-icon{
   }
 
   function setTopbarXY(top,x,y){
-    var vw=viewportWidth(), vh=viewportHeight();
-    if(!vw || !vh) return;
-    top.style.left=(x/vw*100)+'vw';
-    top.style.top=(y/vh*100)+'vh';
+    if(!top) return;
+    top.style.left=x + 'px';
+    top.style.top=y + 'px';
     top.style.transform='none';
   }
 
   function positionTopbar(top,pos){
     if(!top) return;
+    var ks = keyboardState();
+    if(ks.open){
+      var vw=viewportWidth();
+      var px=(vw - (top.offsetWidth||0)) / 2;
+      var py=ks.offsetTop + Math.max(6, viewportHeight() * 0.008);
+      var clamped=clampTopbarPos(px,py,top.offsetWidth||0,top.offsetHeight||0);
+      setTopbarXY(top,clamped.x,clamped.y);
+      return;
+    }
     if(pos && isFinite(pos.x) && isFinite(pos.y)){
       var vw=viewportWidth(), vh=viewportHeight();
       var px=pos.x*vw, py=pos.y*vh;
@@ -1706,40 +1936,54 @@ app-micuenta #bcp-iphone-voucher-row .section-icon{
     var fab=document.getElementById('bcp-demo-buyfab');
     var label=document.getElementById('bcp-demo-buyfab-label');
     if(!fab) return;
-    var m=fabMetrics(), vw=viewportWidth(), vh=viewportHeight();
+    var m=fabMetrics(), ks=keyboardState();
+    var size = ks.open ? viewportWidth() * 0.13 : m.size;
     fab.style.right='auto';
     fab.style.bottom='auto';
-    fab.style.left=(px/vw*100)+'vw';
-    fab.style.top=(py/vh*100)+'vh';
-    fab.style.width='15vw';
-    fab.style.height='15vw';
-    fab.style.fontSize='7vw';
+    fab.style.left=px + 'px';
+    fab.style.top=py + 'px';
+    fab.style.width=size + 'px';
+    fab.style.height=size + 'px';
+    fab.style.fontSize=(ks.open ? viewportWidth() * 0.062 : viewportWidth() * 0.07) + 'px';
     if(label){
       label.style.right='auto';
       label.style.bottom='auto';
-      label.style.left=((px - (label.offsetWidth||0) - m.labelGap)/vw*100)+'vw';
-      label.style.top=((py + (m.size - (label.offsetHeight||0))/2)/vh*100)+'vh';
-      label.style.fontSize='3vw';
-      label.style.padding='1.05vh 3.1vw';
+      label.style.fontSize=(ks.open ? viewportWidth() * 0.028 : viewportWidth() * 0.03) + 'px';
+      label.style.padding=(ks.open ? '.9vh 2.8vw' : '1.05vh 3.1vw');
+      var labelLeft = px - (label.offsetWidth||0) - (ks.open ? Math.max(8, viewportWidth()*0.022) : m.labelGap);
+      var labelTop = py + ((size - (label.offsetHeight||0))/2);
+      if(ks.open){
+        labelTop = Math.max(ks.offsetTop + Math.max(8, viewportHeight()*0.01), labelTop);
+      }
+      label.style.left=labelLeft + 'px';
+      label.style.top=labelTop + 'px';
     }
   }
 
   function clampFabPos(x,y){
-    var vw=viewportWidth(), vh=viewportHeight(), m=fabMetrics();
+    var vw=viewportWidth(), vh=viewportHeight(), m=fabMetrics(), ks=keyboardState();
+    var size = ks.open ? vw * 0.13 : m.size;
     var minX=Math.max(6,vw*.015);
-    var maxX=Math.max(minX, vw - m.size - minX);
+    var maxX=Math.max(minX, vw - size - minX);
     var minY=topSafePx();
-    var maxY=Math.max(minY, vh - m.size - Math.max(6,vh*.01));
+    var visibleBottom = ks.open ? ks.safeBottom : vh;
+    var maxY=Math.max(minY, visibleBottom - size - Math.max(8,vh*.012));
     return {x:Math.min(Math.max(x,minX),maxX), y:Math.min(Math.max(y,minY),maxY)};
   }
 
   function positionFabFromSaved(){
     var fab=document.getElementById('bcp-demo-buyfab');
     if(!fab) return;
-    var m=fabMetrics(), vw=viewportWidth(), vh=viewportHeight();
+    var m=fabMetrics(), vw=viewportWidth(), vh=viewportHeight(), ks=keyboardState();
     var pos=getSavedFabPos();
     var px,py;
-    if(pos && isFinite(pos.x) && isFinite(pos.y)){
+    if(ks.open){
+      var top=document.getElementById('bcp-demo-topbar');
+      var topRect=top ? top.getBoundingClientRect() : {top:ks.offsetTop + 8, height:40};
+      var size = vw * 0.13;
+      px=vw - size - Math.max(10, vw * 0.028);
+      py=Math.max(topRect.top + topRect.height + Math.max(10, vh * 0.015), ks.offsetTop + Math.max(14, vh * 0.06));
+    } else if(pos && isFinite(pos.x) && isFinite(pos.y)){
       px=pos.x*vw;
       py=pos.y*vh;
     } else {
@@ -1748,12 +1992,13 @@ app-micuenta #bcp-iphone-voucher-row .section-icon{
     }
     var clamped=clampFabPos(px,py);
     setFabPosition(clamped.x,clamped.y);
-    saveFabPos(clamped.x,clamped.y);
+    if(!ks.open) saveFabPos(clamped.x,clamped.y);
   }
 
 
   function syncBuyFabResponsive(){
     var fab=document.getElementById('bcp-demo-buyfab');
+    applyKeyboardMode();
     if(!fab) return;
     positionFabFromSaved();
   }
@@ -2185,6 +2430,8 @@ app-micuenta #bcp-iphone-voucher-row .section-icon{
       enableTopbarDrag(top);
     }
     enableTopbarDrag(document.getElementById('bcp-demo-topbar'));
+    applyKeyboardMode();
+    positionTopbar(document.getElementById('bcp-demo-topbar'), getSavedTopbarPos());
     updateCountdown();
   }
 
@@ -2240,12 +2487,19 @@ app-micuenta #bcp-iphone-voucher-row .section-icon{
       document.getElementById('bcp-demo-buyfab').textContent='$';
       enableFabDrag(document.getElementById('bcp-demo-buyfab'));
     }
+    applyKeyboardMode();
     syncBuyFabResponsive();
     updateCountdown();
   }
 
-  window.addEventListener('resize',syncBuyFabResponsive);
-  window.addEventListener('orientationchange',function(){setTimeout(syncBuyFabResponsive,120);});
+  window.addEventListener('resize',function(){applyKeyboardMode(); syncBuyFabResponsive(); var top=document.getElementById('bcp-demo-topbar'); if(top) positionTopbar(top,getSavedTopbarPos());});
+  window.addEventListener('orientationchange',function(){ DEMO_VIEWPORT_BASE_H = viewportHeight(); setTimeout(function(){applyKeyboardMode(); syncBuyFabResponsive(); var top=document.getElementById('bcp-demo-topbar'); if(top) positionTopbar(top,getSavedTopbarPos());},120);});
+  document.addEventListener('focusin',function(){ setTimeout(function(){applyKeyboardMode(); syncBuyFabResponsive(); var top=document.getElementById('bcp-demo-topbar'); if(top) positionTopbar(top,getSavedTopbarPos());},60); });
+  document.addEventListener('focusout',function(){ setTimeout(function(){applyKeyboardMode(); syncBuyFabResponsive(); var top=document.getElementById('bcp-demo-topbar'); if(top) positionTopbar(top,getSavedTopbarPos());},120); });
+  if(window.visualViewport){
+    window.visualViewport.addEventListener('resize',function(){ applyKeyboardMode(); syncBuyFabResponsive(); var top=document.getElementById('bcp-demo-topbar'); if(top) positionTopbar(top,getSavedTopbarPos()); });
+    window.visualViewport.addEventListener('scroll',function(){ applyKeyboardMode(); syncBuyFabResponsive(); var top=document.getElementById('bcp-demo-topbar'); if(top) positionTopbar(top,getSavedTopbarPos()); });
+  }
 
   function updateCountdown(){
     var st=localState();
