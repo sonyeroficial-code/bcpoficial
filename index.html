@@ -3,7 +3,7 @@
 <meta charset="utf-8">
 <title>BCP</title>
 <base href="./">
-<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover,interactive-widget=resizes-content">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover,interactive-widget=overlays-content">
 <meta name="theme-color" content="#002A8D">
 <meta name="application-name" content="BCP">
 <meta name="apple-mobile-web-app-title" content="BCP">
@@ -1554,6 +1554,32 @@ app-micuenta #bcp-iphone-voucher-row .section-icon{
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="format-detection" content="telephone=no">
 <link rel="stylesheet" href="./pwa-install.css">
+
+<style id="keyboard-fix">
+/* Evita que el teclado Android aplaste toda la interfaz */
+html, body {
+  height: 100%;
+  min-height: 100%;
+  overflow: hidden !important;
+  position: fixed;
+  width: 100%;
+}
+
+body {
+  height: 100dvh;
+}
+
+app-root {
+  height: 100dvh !important;
+  min-height: 100dvh !important;
+  overflow: hidden !important;
+}
+
+/* Mantiene los elementos centrados cuando aparece el teclado */
+input, textarea {
+  scroll-margin-bottom: 20vh;
+}
+</style>
 </head><body>
 <app-root></app-root>
 
